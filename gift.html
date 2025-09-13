@@ -133,9 +133,9 @@
         function initGiftPool() {
             // 根据用户身份过滤可抽取的题目池
             if (isAdmin) {
-                // 管理员可以抽取所有未抽取的题目
+                // 管理员只能抽取题目1
                 remainingTopics = topics.filter(function(topic) {
-                    return !drawnTopics[topic.id];
+                    return topic.id === 1 && !drawnTopics[topic.id];
                 });
             } else {
                 // 普通用户只能抽取除第一题外的所有题目
@@ -190,24 +190,16 @@
             var drawnTopic;
             
             if (isAdmin) {
-                // 管理员可以随机抽取所有题目
-                // 如果第一题未被抽取且URL参数中有user=admin&gift=1，则固定抽到第一题
-                var forceTopic1 = getUrlParam('gift') === '1';
+                // 管理员只能抽到题目1
+                drawnTopic = topics.find(function(topic) {
+                    return topic.id === 1 && !drawnTopics[topic.id];
+                });
                 
-                if (forceTopic1) {
-                    drawnTopic = topics.find(function(topic) {
-                        return topic.id === 1 && !drawnTopics[topic.id];
-                    });
-                    
-                    // 如果第一题已被抽取，则随机抽取其他题目
-                    if (!drawnTopic) {
-                        var randomIndex = Math.floor(Math.random() * remainingTopics.length);
-                        drawnTopic = remainingTopics[randomIndex];
-                    }
-                } else {
-                    // 随机抽取
-                    var randomIndex = Math.floor(Math.random() * remainingTopics.length);
-                    drawnTopic = remainingTopics[randomIndex];
+                // 如果题目1已被抽取，则显示提示信息
+                if (!drawnTopic) {
+                    document.getElementById('giftResult').innerText = '题目1已被抽取，没有可抽取的题目';
+                    document.getElementById('drawButton').disabled = true;
+                    return;
                 }
             } else {
                 // 普通用户随机抽取除第一题外的所有题目
@@ -234,6 +226,12 @@
         
         // 重置题目池
         function resetGiftPool() {
+            // 只有管理员可以重置抽奖
+            if (!isAdmin) {
+                alert('只有管理员可以重置抽奖！');
+                return;
+            }
+            
             if (confirm('确定要重置题目池吗？所有抽奖记录将被清除！')) {
                 localStorage.removeItem('drawnTopics');
                 drawnTopics = {};
@@ -242,16 +240,7 @@
                 document.getElementById('giftResult').innerText = '点击下方按钮抽取题目';
                 
                 // 添加提示信息，显示当前用户身份
-                if (isAdmin) {
-                    var forceTopic1 = getUrlParam('gift') === '1';
-                    if (forceTopic1) {
-                        console.log('管理员模式：将优先抽到第一题');
-                    } else {
-                        console.log('管理员模式：可以抽取所有题目');
-                    }
-                } else {
-                    console.log('普通用户模式：只能抽取除第一题外的所有题目');
-                }
+                console.log('管理员模式：重置成功，只能抽取题目1');
             }
         }
         
@@ -266,12 +255,7 @@
         
         // 在控制台显示当前用户身份
         if (isAdmin) {
-            var forceTopic1 = getUrlParam('gift') === '1';
-            if (forceTopic1) {
-                console.log('管理员模式：将优先抽到第一题');
-            } else {
-                console.log('管理员模式：可以抽取所有题目');
-            }
+            console.log('管理员模式：只能抽取题目1');
             // 不再为管理员添加标记，确保与普通用户界面一致
         } else {
             console.log('普通用户模式：只能抽取除第一题外的所有题目');
