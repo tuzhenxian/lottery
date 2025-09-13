@@ -130,32 +130,72 @@
         // 判断是否为管理员
         var isAdmin = getUrlParam('user') === 'admin';
         
-        // 获取已抽取的题目 - 使用sessionStorage确保在同一会话中共享抽奖状态
-        var drawnTopics = JSON.parse(sessionStorage.getItem('drawnTopics')) || {};
+        // 生成或获取唯一的抽奖会话ID
+        var sessionId = getUrlParam('session') || 'default-session';
+        var storageKeyPrefix = 'lottery_' + sessionId + '_';
+        
+        // 获取已抽取的题目 - 使用localStorage确保跨设备共享
+        var drawnTopics = JSON.parse(localStorage.getItem(storageKeyPrefix + 'drawnTopics')) || {};
         var remainingTopics = [];
         
         // 检查当前用户是否已经抽取过题目
-        var hasDrawn = sessionStorage.getItem('userHasDrawn') === 'true';
+        var hasDrawn = localStorage.getItem(storageKeyPrefix + 'user_' + (currentUserName || 'anonymous')) === 'true';
+        
+        // 获取抽取者信息
+        var topicDrawers = JSON.parse(localStorage.getItem(storageKeyPrefix + 'topicDrawers')) || {};
+        
+        // 获取已使用的用户名
+        var usedUserNames = JSON.parse(localStorage.getItem(storageKeyPrefix + 'usedUserNames')) || [];
         
         // 定期检查题目状态更新
         function checkTopicStatus() {
-            // 从服务器获取最新的题目状态（模拟实现，实际应使用AJAX请求）
-            var serverDrawnTopics = JSON.parse(sessionStorage.getItem('serverDrawnTopics')) || {};
+            // 从localStorage获取最新状态
+            var latestDrawnTopics = JSON.parse(localStorage.getItem(storageKeyPrefix + 'drawnTopics')) || {};
+            var latestTopicDrawers = JSON.parse(localStorage.getItem(storageKeyPrefix + 'topicDrawers')) || {};
+            var latestUsedUserNames = JSON.parse(localStorage.getItem(storageKeyPrefix + 'usedUserNames')) || [];
             
-            // 合并本地和服务器状态
-            for (var topicId in serverDrawnTopics) {
-                drawnTopics[topicId] = true;
+            // 检查是否有更新
+            var hasUpdates = false;
+            
+            // 更新抽取状态
+            for (var topicId in latestDrawnTopics) {
+                if (!drawnTopics[topicId]) {
+                    drawnTopics[topicId] = true;
+                    hasUpdates = true;
+                }
             }
             
-            // 更新本地存储
-            sessionStorage.setItem('drawnTopics', JSON.stringify(drawnTopics));
+            // 更新抽取者信息
+            for (var topicId in latestTopicDrawers) {
+                if (topicDrawers[topicId] !== latestTopicDrawers[topicId]) {
+                    topicDrawers[topicId] = latestTopicDrawers[topicId];
+                    hasUpdates = true;
+                }
+            }
             
-            // 更新题目池
-            initGiftPool();
+            // 更新已使用用户名
+            for (var i = 0; i < latestUsedUserNames.length; i++) {
+                if (!usedUserNames.includes(latestUsedUserNames[i])) {
+                    usedUserNames.push(latestUsedUserNames[i]);
+                    hasUpdates = true;
+                }
+            }
+            
+            // 检查当前用户是否已抽取
+            var userDrawnStatus = localStorage.getItem(storageKeyPrefix + 'user_' + (currentUserName || 'anonymous'));
+            if (userDrawnStatus === 'true' && !hasDrawn) {
+                hasDrawn = true;
+                hasUpdates = true;
+            }
+            
+            // 如果有更新，刷新题目池
+            if (hasUpdates) {
+                initGiftPool();
+            }
         }
         
-        // 每2秒检查一次题目状态
-        setInterval(checkTopicStatus, 2000);
+        // 每1秒检查一次题目状态
+        setInterval(checkTopicStatus, 1000);
         
         // 初始化题目池
         function initGiftPool() {
@@ -190,8 +230,8 @@
             var giftPoolElement = document.getElementById('giftPool');
             giftPoolElement.innerHTML = '';
             
-            // 获取抽取者信息（模拟实现）
-            var drawers = JSON.parse(sessionStorage.getItem('topicDrawers')) || {};
+            // 获取抽取者信息
+            var drawers = topicDrawers;
             
             topics.forEach(function(topic) {
                 // 所有用户都能看到所有题目
@@ -263,22 +303,16 @@
             
             // 标记为已抽取
             drawnTopics[drawnTopic.id] = true;
-            sessionStorage.setItem('drawnTopics', JSON.stringify(drawnTopics));
-            
-            // 模拟将抽取结果同步到服务器
-            var serverDrawnTopics = JSON.parse(sessionStorage.getItem('serverDrawnTopics')) || {};
-            serverDrawnTopics[drawnTopic.id] = true;
-            sessionStorage.setItem('serverDrawnTopics', JSON.stringify(serverDrawnTopics));
+            localStorage.setItem(storageKeyPrefix + 'drawnTopics', JSON.stringify(drawnTopics));
             
             // 记录抽取者信息
-            var topicDrawers = JSON.parse(sessionStorage.getItem('topicDrawers')) || {};
             var drawerName = isAdmin ? '管理员' : (currentUserName || '匿名用户' + Math.floor(Math.random() * 1000));
             topicDrawers[drawnTopic.id] = drawerName;
-            sessionStorage.setItem('topicDrawers', JSON.stringify(topicDrawers));
+            localStorage.setItem(storageKeyPrefix + 'topicDrawers', JSON.stringify(topicDrawers));
             
             // 如果是普通用户，标记该用户已经抽取过题目
             if (!isAdmin) {
-                sessionStorage.setItem('userHasDrawn', 'true');
+                localStorage.setItem(storageKeyPrefix + 'user_' + (currentUserName || 'anonymous'), 'true');
                 hasDrawn = true;
             }
             
@@ -298,13 +332,26 @@
             }
             
             if (confirm('确定要重置题目池吗？所有抽奖记录将被清除！')) {
-                sessionStorage.removeItem('drawnTopics');
-                sessionStorage.removeItem('userHasDrawn');
-                sessionStorage.removeItem('serverDrawnTopics');
-                sessionStorage.removeItem('topicDrawers');
-                sessionStorage.removeItem('usedUserNames');
+                // 清除当前会话的所有抽奖记录
+                localStorage.removeItem(storageKeyPrefix + 'drawnTopics');
+                localStorage.removeItem(storageKeyPrefix + 'topicDrawers');
+                localStorage.removeItem(storageKeyPrefix + 'usedUserNames');
+                
+                // 清除所有用户的抽取状态
+                var allKeys = Object.keys(localStorage);
+                for (var i = 0; i < allKeys.length; i++) {
+                    if (allKeys[i].startsWith(storageKeyPrefix + 'user_')) {
+                        localStorage.removeItem(allKeys[i]);
+                    }
+                }
+                
+                // 重置内存中的状态
                 drawnTopics = {};
+                topicDrawers = {};
+                usedUserNames = [];
                 hasDrawn = false;
+                
+                // 更新UI
                 initGiftPool();
                 document.getElementById('drawButton').disabled = false;
                 document.getElementById('giftResult').innerText = '点击下方按钮抽取题目';
@@ -320,7 +367,7 @@
         // 用户名相关变量和元素
         var userNameInput = document.getElementById('userName');
         var saveUserNameBtn = document.getElementById('saveUserName');
-        var currentUserName = sessionStorage.getItem('currentUserName') || '';
+        var currentUserName = localStorage.getItem(storageKeyPrefix + 'currentUserName') || '';
         
         // 如果有保存的用户名，显示在输入框中
         if (currentUserName) {
@@ -328,38 +375,52 @@
         }
         
         // 保存用户名按钮点击事件
-         saveUserNameBtn.addEventListener('click', function() {
-             var newUserName = userNameInput.value.trim();
-             if (!newUserName) {
-                 alert('请输入有效的用户名');
-                 return;
-             }
-             
-             // 检查用户名是否已被使用
-             var usedNames = JSON.parse(sessionStorage.getItem('usedUserNames')) || [];
-             if (usedNames.includes(newUserName) && newUserName !== currentUserName) {
-                 alert('该用户名已被使用，请使用其他用户名');
-                 return;
-             }
-             
-             // 如果有旧用户名，从已使用列表中移除
-             if (currentUserName && currentUserName !== newUserName) {
-                 var index = usedNames.indexOf(currentUserName);
-                 if (index > -1) {
-                     usedNames.splice(index, 1);
-                 }
-             }
-             
-             // 添加新用户名到已使用列表
-             if (!usedNames.includes(newUserName)) {
-                 usedNames.push(newUserName);
-                 sessionStorage.setItem('usedUserNames', JSON.stringify(usedNames));
-             }
-             
-             // 保存当前用户名
-             currentUserName = newUserName;
-             sessionStorage.setItem('currentUserName', currentUserName);
-             alert('用户名已保存: ' + currentUserName);
+        saveUserNameBtn.addEventListener('click', function() {
+            var newUserName = userNameInput.value.trim();
+            if (!newUserName) {
+                alert('请输入有效的用户名');
+                return;
+            }
+            
+            // 检查用户名是否已被使用
+            if (usedUserNames.includes(newUserName) && newUserName !== currentUserName) {
+                alert('该用户名已被使用，请使用其他用户名');
+                return;
+            }
+            
+            // 如果有旧用户名，从已使用列表中移除
+            if (currentUserName && currentUserName !== newUserName) {
+                var index = usedUserNames.indexOf(currentUserName);
+                if (index > -1) {
+                    usedUserNames.splice(index, 1);
+                }
+                
+                // 如果用户已经抽取过，需要更新用户抽取状态的键名
+                if (hasDrawn) {
+                    var oldDrawnStatus = localStorage.getItem(storageKeyPrefix + 'user_' + currentUserName);
+                    if (oldDrawnStatus === 'true') {
+                        localStorage.removeItem(storageKeyPrefix + 'user_' + currentUserName);
+                        localStorage.setItem(storageKeyPrefix + 'user_' + newUserName, 'true');
+                    }
+                }
+            }
+            
+            // 添加新用户名到已使用列表
+            if (!usedUserNames.includes(newUserName)) {
+                usedUserNames.push(newUserName);
+                localStorage.setItem(storageKeyPrefix + 'usedUserNames', JSON.stringify(usedUserNames));
+            }
+            
+            // 保存当前用户名
+            currentUserName = newUserName;
+            localStorage.setItem(storageKeyPrefix + 'currentUserName', currentUserName);
+            alert('用户名已保存: ' + currentUserName);
+            
+            // 检查用户是否已抽取过题目
+            hasDrawn = localStorage.getItem(storageKeyPrefix + 'user_' + currentUserName) === 'true';
+            
+            // 更新题目池显示
+            initGiftPool();
          });
         
         // 绑定事件
