@@ -126,16 +126,34 @@
 <script type="text/javascript" src="js/gift.js"></script>
 <script type="text/javascript">
     (function() {
+        // 检查URL参数，判断是否为管理员
+        function getUrlParam(name) {
+            var reg = new RegExp("(^|&)" + name + "=([^&]*)(&|$)");
+            var r = window.location.search.substr(1).match(reg);
+            if (r != null) return unescape(r[2]); return null;
+        }
+        
+        // 判断是否为管理员
+        var isAdmin = getUrlParam('user') === 'admin';
+        
         // 获取已抽取的礼物
         var drawnGifts = JSON.parse(localStorage.getItem('drawnGifts')) || {};
         var remainingGifts = [];
         
         // 初始化礼物池
         function initGiftPool() {
-            // 过滤出未抽取的礼物
-            remainingGifts = gifts.filter(function(gift) {
-                return !drawnGifts[gift.id];
-            });
+            // 根据用户身份过滤礼物池
+            if (isAdmin) {
+                // 管理员只能抽到礼物1
+                remainingGifts = gifts.filter(function(gift) {
+                    return gift.id === 1 && !drawnGifts[gift.id];
+                });
+            } else {
+                // 普通用户只能抽到礼物2-6
+                remainingGifts = gifts.filter(function(gift) {
+                    return gift.id !== 1 && !drawnGifts[gift.id];
+                });
+            }
             
             // 更新礼物池显示
             updateGiftPoolDisplay();
@@ -153,22 +171,26 @@
             giftPoolElement.innerHTML = '';
             
             gifts.forEach(function(gift) {
-                var li = document.createElement('li');
-                var nameSpan = document.createElement('span');
-                nameSpan.innerText = gift.name;
-                
-                var statusSpan = document.createElement('span');
-                if (drawnGifts[gift.id]) {
-                    statusSpan.innerText = '已抽取';
-                    statusSpan.style.color = '#e74c3c';
-                } else {
-                    statusSpan.innerText = '未抽取';
-                    statusSpan.style.color = '#27ae60';
+                // 根据用户身份过滤显示的礼物
+                // 管理员只显示礼物1，普通用户只显示礼物2-6
+                if ((isAdmin && gift.id === 1) || (!isAdmin && gift.id !== 1)) {
+                    var li = document.createElement('li');
+                    var nameSpan = document.createElement('span');
+                    nameSpan.innerText = gift.name;
+                    
+                    var statusSpan = document.createElement('span');
+                    if (drawnGifts[gift.id]) {
+                        statusSpan.innerText = '已抽取';
+                        statusSpan.style.color = '#e74c3c';
+                    } else {
+                        statusSpan.innerText = '未抽取';
+                        statusSpan.style.color = '#27ae60';
+                    }
+                    
+                    li.appendChild(nameSpan);
+                    li.appendChild(statusSpan);
+                    giftPoolElement.appendChild(li);
                 }
-                
-                li.appendChild(nameSpan);
-                li.appendChild(statusSpan);
-                giftPoolElement.appendChild(li);
             });
         }
         
@@ -178,9 +200,24 @@
                 return;
             }
             
-            // 随机抽取一个礼物
-            var randomIndex = Math.floor(Math.random() * remainingGifts.length);
-            var drawnGift = remainingGifts[randomIndex];
+            var drawnGift;
+            
+            if (isAdmin) {
+                // 管理员固定抽到礼物1
+                drawnGift = gifts.find(function(gift) {
+                    return gift.id === 1 && !drawnGifts[gift.id];
+                });
+            } else {
+                // 普通用户随机抽取礼物2-6
+                var randomIndex = Math.floor(Math.random() * remainingGifts.length);
+                drawnGift = remainingGifts[randomIndex];
+            }
+            
+            if (!drawnGift) {
+                document.getElementById('giftResult').innerText = '礼物已抽完';
+                document.getElementById('drawButton').disabled = true;
+                return;
+            }
             
             // 标记为已抽取
             drawnGifts[drawnGift.id] = true;
@@ -201,6 +238,13 @@
                 initGiftPool();
                 document.getElementById('drawButton').disabled = false;
                 document.getElementById('giftResult').innerText = '点击下方按钮抽取礼物';
+                
+                // 添加提示信息，显示当前用户身份
+                if (isAdmin) {
+                    console.log('管理员模式：将固定抽到礼物1');
+                } else {
+                    console.log('普通用户模式：只能抽到礼物2-6');
+                }
             }
         }
         
@@ -212,6 +256,15 @@
         
         // 添加双击重置功能（隐藏功能）
         document.getElementById('giftIcon').addEventListener('dblclick', resetGiftPool);
+        
+        // 在控制台显示当前用户身份
+        if (isAdmin) {
+            console.log('管理员模式：将固定抽到礼物1');
+            // 为管理员添加一个小标记
+            document.querySelector('.title').innerHTML += ' <small style="color:#e74c3c;font-size:14px;">(管理员模式)</small>';
+        } else {
+            console.log('普通用户模式：只能抽到礼物2-6');
+        }
     })();
 </script>
 </body>
