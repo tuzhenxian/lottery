@@ -4,7 +4,7 @@
     <meta name="screen-orientation" content="portrait">
     <meta http-equiv="content-type" content="text/html; charset=utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=0"/>
-    <title>抽奖礼物</title>
+    <title>抽题目</title>
     <link rel="stylesheet" type="text/css" href="css/reset.css">
     <link rel="stylesheet" type="text/css" href="css/wall.css">
     <style type="text/css">
@@ -106,16 +106,16 @@
 </head>
 <body>
 <div class="container">
-    <h1 class="title">抽奖礼物</h1>
+    <h1 class="title">抽题目</h1>
     
     <div class="gift-box">
         <div class="gift-image" id="giftIcon">🎁</div>
-        <div class="gift-result" id="giftResult">点击下方按钮抽取礼物</div>
-        <button class="draw-button" id="drawButton">抽取礼物</button>
+        <div class="gift-result" id="giftResult">点击下方按钮抽取题目</div>
+        <button class="draw-button" id="drawButton">抽取题目</button>
     </div>
     
     <div class="gift-list">
-        <h2>礼物池</h2>
+        <h2>题目列表</h2>
         <ul id="giftPool"></ul>
     </div>
     
@@ -123,7 +123,7 @@
 </div>
 
 <script type="text/javascript" src="js/zepto.js"></script>
-<script type="text/javascript" src="js/gift.js"></script>
+<script type="text/javascript" src="js/topics.js"></script>
 <script type="text/javascript">
     (function() {
         // 检查URL参数，判断是否为管理员
@@ -136,114 +136,137 @@
         // 判断是否为管理员
         var isAdmin = getUrlParam('user') === 'admin';
         
-        // 获取已抽取的礼物
-        var drawnGifts = JSON.parse(localStorage.getItem('drawnGifts')) || {};
-        var remainingGifts = [];
+        // 获取已抽取的题目
+        var drawnTopics = JSON.parse(localStorage.getItem('drawnTopics')) || {};
+        var remainingTopics = [];
         
-        // 初始化礼物池
+        // 初始化题目池
         function initGiftPool() {
-            // 根据用户身份过滤礼物池
+            // 根据用户身份过滤可抽取的题目池
             if (isAdmin) {
-                // 管理员只能抽到礼物1
-                remainingGifts = gifts.filter(function(gift) {
-                    return gift.id === 1 && !drawnGifts[gift.id];
+                // 管理员可以抽取所有未抽取的题目
+                remainingTopics = topics.filter(function(topic) {
+                    return !drawnTopics[topic.id];
                 });
             } else {
-                // 普通用户只能抽到礼物2-6
-                remainingGifts = gifts.filter(function(gift) {
-                    return gift.id !== 1 && !drawnGifts[gift.id];
+                // 普通用户只能抽取除第一题外的所有题目
+                remainingTopics = topics.filter(function(topic) {
+                    return topic.id !== 1 && !drawnTopics[topic.id];
                 });
             }
             
-            // 更新礼物池显示
+            // 更新题目池显示
             updateGiftPoolDisplay();
             
-            // 如果没有剩余礼物，禁用抽奖按钮
-            if (remainingGifts.length === 0) {
+            // 如果没有剩余题目，禁用抽题按钮
+            if (remainingTopics.length === 0) {
                 document.getElementById('drawButton').disabled = true;
-                document.getElementById('giftResult').innerText = '礼物已抽完';
+                document.getElementById('giftResult').innerText = '题目已抽完';
             }
         }
         
-        // 更新礼物池显示
+        // 更新题目池显示
         function updateGiftPoolDisplay() {
             var giftPoolElement = document.getElementById('giftPool');
             giftPoolElement.innerHTML = '';
             
-            gifts.forEach(function(gift) {
-                // 根据用户身份过滤显示的礼物
-                // 管理员只显示礼物1，普通用户只显示礼物2-6
-                if ((isAdmin && gift.id === 1) || (!isAdmin && gift.id !== 1)) {
-                    var li = document.createElement('li');
-                    var nameSpan = document.createElement('span');
-                    nameSpan.innerText = gift.name;
-                    
-                    var statusSpan = document.createElement('span');
-                    if (drawnGifts[gift.id]) {
-                        statusSpan.innerText = '已抽取';
-                        statusSpan.style.color = '#e74c3c';
+            topics.forEach(function(topic) {
+                // 所有用户都能看到所有题目
+                var li = document.createElement('li');
+                var nameSpan = document.createElement('span');
+                nameSpan.innerText = topic.name;
+                
+                var statusSpan = document.createElement('span');
+                if (drawnTopics[topic.id]) {
+                    statusSpan.innerText = '已抽取';
+                    statusSpan.style.color = '#e74c3c';
+                } else {
+                    // 如果是第一题且不是管理员，显示不可抽取
+                    if (topic.id === 1 && !isAdmin) {
+                        statusSpan.innerText = '仅限管理员抽取';
+                        statusSpan.style.color = '#999';
                     } else {
                         statusSpan.innerText = '未抽取';
                         statusSpan.style.color = '#27ae60';
                     }
-                    
-                    li.appendChild(nameSpan);
-                    li.appendChild(statusSpan);
-                    giftPoolElement.appendChild(li);
                 }
+                
+                li.appendChild(nameSpan);
+                li.appendChild(statusSpan);
+                giftPoolElement.appendChild(li);
             });
         }
         
-        // 抽取礼物
+        // 抽取题目
         function drawGift() {
-            if (remainingGifts.length === 0) {
+            if (remainingTopics.length === 0) {
                 return;
             }
             
-            var drawnGift;
+            var drawnTopic;
             
             if (isAdmin) {
-                // 管理员固定抽到礼物1
-                drawnGift = gifts.find(function(gift) {
-                    return gift.id === 1 && !drawnGifts[gift.id];
-                });
+                // 管理员可以随机抽取所有题目
+                // 如果第一题未被抽取且URL参数中有user=admin&gift=1，则固定抽到第一题
+                var forceTopic1 = getUrlParam('gift') === '1';
+                
+                if (forceTopic1) {
+                    drawnTopic = topics.find(function(topic) {
+                        return topic.id === 1 && !drawnTopics[topic.id];
+                    });
+                    
+                    // 如果第一题已被抽取，则随机抽取其他题目
+                    if (!drawnTopic) {
+                        var randomIndex = Math.floor(Math.random() * remainingTopics.length);
+                        drawnTopic = remainingTopics[randomIndex];
+                    }
+                } else {
+                    // 随机抽取
+                    var randomIndex = Math.floor(Math.random() * remainingTopics.length);
+                    drawnTopic = remainingTopics[randomIndex];
+                }
             } else {
-                // 普通用户随机抽取礼物2-6
-                var randomIndex = Math.floor(Math.random() * remainingGifts.length);
-                drawnGift = remainingGifts[randomIndex];
+                // 普通用户随机抽取除第一题外的所有题目
+                var randomIndex = Math.floor(Math.random() * remainingTopics.length);
+                drawnTopic = remainingTopics[randomIndex];
             }
             
-            if (!drawnGift) {
-                document.getElementById('giftResult').innerText = '礼物已抽完';
+            if (!drawnTopic) {
+                document.getElementById('giftResult').innerText = '题目已抽完';
                 document.getElementById('drawButton').disabled = true;
                 return;
             }
             
             // 标记为已抽取
-            drawnGifts[drawnGift.id] = true;
-            localStorage.setItem('drawnGifts', JSON.stringify(drawnGifts));
+            drawnTopics[drawnTopic.id] = true;
+            localStorage.setItem('drawnTopics', JSON.stringify(drawnTopics));
             
             // 显示抽取结果
-            document.getElementById('giftResult').innerText = '恭喜您获得：' + drawnGift.name;
+            document.getElementById('giftResult').innerText = '您的题目是：' + drawnTopic.name;
             
-            // 更新礼物池
+            // 更新题目池
             initGiftPool();
         }
         
-        // 重置礼物池
+        // 重置题目池
         function resetGiftPool() {
-            if (confirm('确定要重置礼物池吗？所有抽奖记录将被清除！')) {
-                localStorage.removeItem('drawnGifts');
-                drawnGifts = {};
+            if (confirm('确定要重置题目池吗？所有抽奖记录将被清除！')) {
+                localStorage.removeItem('drawnTopics');
+                drawnTopics = {};
                 initGiftPool();
                 document.getElementById('drawButton').disabled = false;
-                document.getElementById('giftResult').innerText = '点击下方按钮抽取礼物';
+                document.getElementById('giftResult').innerText = '点击下方按钮抽取题目';
                 
                 // 添加提示信息，显示当前用户身份
                 if (isAdmin) {
-                    console.log('管理员模式：将固定抽到礼物1');
+                    var forceTopic1 = getUrlParam('gift') === '1';
+                    if (forceTopic1) {
+                        console.log('管理员模式：将优先抽到第一题');
+                    } else {
+                        console.log('管理员模式：可以抽取所有题目');
+                    }
                 } else {
-                    console.log('普通用户模式：只能抽到礼物2-6');
+                    console.log('普通用户模式：只能抽取除第一题外的所有题目');
                 }
             }
         }
@@ -259,11 +282,16 @@
         
         // 在控制台显示当前用户身份
         if (isAdmin) {
-            console.log('管理员模式：将固定抽到礼物1');
+            var forceTopic1 = getUrlParam('gift') === '1';
+            if (forceTopic1) {
+                console.log('管理员模式：将优先抽到第一题');
+            } else {
+                console.log('管理员模式：可以抽取所有题目');
+            }
             // 为管理员添加一个小标记
             document.querySelector('.title').innerHTML += ' <small style="color:#e74c3c;font-size:14px;">(管理员模式)</small>';
         } else {
-            console.log('普通用户模式：只能抽到礼物2-6');
+            console.log('普通用户模式：只能抽取除第一题外的所有题目');
         }
     })();
 </script>

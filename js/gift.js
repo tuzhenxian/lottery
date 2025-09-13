@@ -1,26 +1,26 @@
 var gifts = [
     {
         "id": 1,
-        "name": "礼物1"
+        "name": "iPhone 15 Pro Max"
     },
     {
         "id": 2,
-        "name": "礼物2"
+        "name": "AirPods Pro"
     },
     {
         "id": 3,
-        "name": "礼物3"
+        "name": "iPad Air"
     },
     {
         "id": 4,
-        "name": "礼物4"
+        "name": "Apple Watch"
     },
     {
         "id": 5,
-        "name": "礼物5"
+        "name": "小米手环"
     },
     {
         "id": 6,
-        "name": "礼物6"
+        "name": "京东购物卡"
     }
 ];
