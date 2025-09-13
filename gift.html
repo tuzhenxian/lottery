@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="screen-orientation" content="portrait">
+    <meta http-equiv="content-type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=0"/>
+    <title>抽奖礼物</title>
+    <link rel="stylesheet" type="text/css" href="css/reset.css">
+    <link rel="stylesheet" type="text/css" href="css/wall.css">
+    <style type="text/css">
+        body, html {
+            width: 100%;
+            height: 100%;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            text-align: center;
+        }
+        .title {
+            font-size: 24px;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .gift-box {
+            background-color: #fff;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
+        }
+        .gift-result {
+            font-size: 22px;
+            color: #e74c3c;
+            margin: 20px 0;
+            min-height: 30px;
+        }
+        .gift-image {
+            width: 120px;
+            height: 120px;
+            margin: 0 auto 20px;
+            background-color: #f8f8f8;
+            border-radius: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 40px;
+            color: #e74c3c;
+        }
+        .draw-button {
+            background-color: #e74c3c;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            font-size: 18px;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .draw-button:hover {
+            background-color: #c0392b;
+        }
+        .draw-button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .gift-list {
+            margin-top: 30px;
+            text-align: left;
+            background-color: #fff;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+        .gift-list h2 {
+            font-size: 18px;
+            color: #333;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        .gift-list ul {
+            list-style: none;
+            padding: 0;
+        }
+        .gift-list li {
+            padding: 10px 0;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+        }
+        .gift-list li:last-child {
+            border-bottom: none;
+        }
+        .back-link {
+            display: inline-block;
+            margin-top: 20px;
+            color: #3498db;
+            text-decoration: none;
+        }
+        .back-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1 class="title">抽奖礼物</h1>
+    
+    <div class="gift-box">
+        <div class="gift-image" id="giftIcon">🎁</div>
+        <div class="gift-result" id="giftResult">点击下方按钮抽取礼物</div>
+        <button class="draw-button" id="drawButton">抽取礼物</button>
+    </div>
+    
+    <div class="gift-list">
+        <h2>礼物池</h2>
+        <ul id="giftPool"></ul>
+    </div>
+    
+    <a href="index.html" class="back-link">返回抽奖主页</a>
+</div>
+
+<script type="text/javascript" src="js/zepto.js"></script>
+<script type="text/javascript" src="js/gift.js"></script>
+<script type="text/javascript">
+    (function() {
+        // 获取已抽取的礼物
+        var drawnGifts = JSON.parse(localStorage.getItem('drawnGifts')) || {};
+        var remainingGifts = [];
+        
+        // 初始化礼物池
+        function initGiftPool() {
+            // 过滤出未抽取的礼物
+            remainingGifts = gifts.filter(function(gift) {
+                return !drawnGifts[gift.id];
+            });
+            
+            // 更新礼物池显示
+            updateGiftPoolDisplay();
+            
+            // 如果没有剩余礼物，禁用抽奖按钮
+            if (remainingGifts.length === 0) {
+                document.getElementById('drawButton').disabled = true;
+                document.getElementById('giftResult').innerText = '礼物已抽完';
+            }
+        }
+        
+        // 更新礼物池显示
+        function updateGiftPoolDisplay() {
+            var giftPoolElement = document.getElementById('giftPool');
+            giftPoolElement.innerHTML = '';
+            
+            gifts.forEach(function(gift) {
+                var li = document.createElement('li');
+                var nameSpan = document.createElement('span');
+                nameSpan.innerText = gift.name;
+                
+                var statusSpan = document.createElement('span');
+                if (drawnGifts[gift.id]) {
+                    statusSpan.innerText = '已抽取';
+                    statusSpan.style.color = '#e74c3c';
+                } else {
+                    statusSpan.innerText = '未抽取';
+                    statusSpan.style.color = '#27ae60';
+                }
+                
+                li.appendChild(nameSpan);
+                li.appendChild(statusSpan);
+                giftPoolElement.appendChild(li);
+            });
+        }
+        
+        // 抽取礼物
+        function drawGift() {
+            if (remainingGifts.length === 0) {
+                return;
+            }
+            
+            // 随机抽取一个礼物
+            var randomIndex = Math.floor(Math.random() * remainingGifts.length);
+            var drawnGift = remainingGifts[randomIndex];
+            
+            // 标记为已抽取
+            drawnGifts[drawnGift.id] = true;
+            localStorage.setItem('drawnGifts', JSON.stringify(drawnGifts));
+            
+            // 显示抽取结果
+            document.getElementById('giftResult').innerText = '恭喜您获得：' + drawnGift.name;
+            
+            // 更新礼物池
+            initGiftPool();
+        }
+        
+        // 重置礼物池
+        function resetGiftPool() {
+            if (confirm('确定要重置礼物池吗？所有抽奖记录将被清除！')) {
+                localStorage.removeItem('drawnGifts');
+                drawnGifts = {};
+                initGiftPool();
+                document.getElementById('drawButton').disabled = false;
+                document.getElementById('giftResult').innerText = '点击下方按钮抽取礼物';
+            }
+        }
+        
+        // 初始化
+        initGiftPool();
+        
+        // 绑定事件
+        document.getElementById('drawButton').addEventListener('click', drawGift);
+        
+        // 添加双击重置功能（隐藏功能）
+        document.getElementById('giftIcon').addEventListener('dblclick', resetGiftPool);
+    })();
+</script>
+</body>
+</html>
