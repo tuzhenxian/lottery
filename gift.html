@@ -93,15 +93,6 @@
         .gift-list li:last-child {
             border-bottom: none;
         }
-        .back-link {
-            display: inline-block;
-            margin-top: 20px;
-            color: #3498db;
-            text-decoration: none;
-        }
-        .back-link:hover {
-            text-decoration: underline;
-        }
     </style>
 </head>
 <body>
@@ -118,8 +109,6 @@
         <h2>题目列表</h2>
         <ul id="giftPool"></ul>
     </div>
-    
-    <a href="index.html" class="back-link">返回抽奖主页</a>
 </div>
 
 <script type="text/javascript" src="js/zepto.js"></script>
@@ -181,14 +170,9 @@
                     statusSpan.innerText = '已抽取';
                     statusSpan.style.color = '#e74c3c';
                 } else {
-                    // 如果是第一题且不是管理员，显示不可抽取
-                    if (topic.id === 1 && !isAdmin) {
-                        statusSpan.innerText = '仅限管理员抽取';
-                        statusSpan.style.color = '#999';
-                    } else {
-                        statusSpan.innerText = '未抽取';
-                        statusSpan.style.color = '#27ae60';
-                    }
+                    // 所有题目对所有用户都显示为未抽取
+                    statusSpan.innerText = '未抽取';
+                    statusSpan.style.color = '#27ae60';
                 }
                 
                 li.appendChild(nameSpan);
@@ -288,8 +272,7 @@
             } else {
                 console.log('管理员模式：可以抽取所有题目');
             }
-            // 为管理员添加一个小标记
-            document.querySelector('.title').innerHTML += ' <small style="color:#e74c3c;font-size:14px;">(管理员模式)</small>';
+            // 不再为管理员添加标记，确保与普通用户界面一致
         } else {
             console.log('普通用户模式：只能抽取除第一题外的所有题目');
         }
