@@ -306,7 +306,7 @@
             localStorage.setItem(storageKeyPrefix + 'drawnTopics', JSON.stringify(drawnTopics));
             
             // 记录抽取者信息
-            var drawerName = isAdmin ? '管理员' : (currentUserName || '匿名用户' + Math.floor(Math.random() * 1000));
+            var drawerName = currentUserName || (isAdmin ? '管理员' : '匿名用户' + Math.floor(Math.random() * 1000));
             topicDrawers[drawnTopic.id] = drawerName;
             localStorage.setItem(storageKeyPrefix + 'topicDrawers', JSON.stringify(topicDrawers));
             
