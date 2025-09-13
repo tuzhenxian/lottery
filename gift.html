@@ -129,6 +129,9 @@
         var drawnTopics = JSON.parse(localStorage.getItem('drawnTopics')) || {};
         var remainingTopics = [];
         
+        // 检查当前用户是否已经抽取过题目
+        var hasDrawn = localStorage.getItem('userHasDrawn') === 'true';
+        
         // 初始化题目池
         function initGiftPool() {
             // 根据用户身份过滤可抽取的题目池
@@ -147,10 +150,13 @@
             // 更新题目池显示
             updateGiftPoolDisplay();
             
-            // 如果没有剩余题目，禁用抽题按钮
+            // 如果没有剩余题目或普通用户已经抽取过，禁用抽题按钮
             if (remainingTopics.length === 0) {
                 document.getElementById('drawButton').disabled = true;
                 document.getElementById('giftResult').innerText = '题目已抽完';
+            } else if (!isAdmin && hasDrawn) {
+                document.getElementById('drawButton').disabled = true;
+                document.getElementById('giftResult').innerText = '您已经抽取过题目，每个用户只能抽取一次';
             }
         }
         
@@ -183,6 +189,13 @@
         
         // 抽取题目
         function drawGift() {
+            // 检查用户是否已经抽取过题目
+            if (!isAdmin && hasDrawn) {
+                document.getElementById('giftResult').innerText = '您已经抽取过题目，每个用户只能抽取一次';
+                document.getElementById('drawButton').disabled = true;
+                return;
+            }
+            
             if (remainingTopics.length === 0) {
                 return;
             }
@@ -217,6 +230,12 @@
             drawnTopics[drawnTopic.id] = true;
             localStorage.setItem('drawnTopics', JSON.stringify(drawnTopics));
             
+            // 如果是普通用户，标记该用户已经抽取过题目
+            if (!isAdmin) {
+                localStorage.setItem('userHasDrawn', 'true');
+                hasDrawn = true;
+            }
+            
             // 显示抽取结果
             document.getElementById('giftResult').innerText = '您的题目是：' + drawnTopic.name;
             
@@ -234,7 +253,9 @@
             
             if (confirm('确定要重置题目池吗？所有抽奖记录将被清除！')) {
                 localStorage.removeItem('drawnTopics');
+                localStorage.removeItem('userHasDrawn');
                 drawnTopics = {};
+                hasDrawn = false;
                 initGiftPool();
                 document.getElementById('drawButton').disabled = false;
                 document.getElementById('giftResult').innerText = '点击下方按钮抽取题目';
