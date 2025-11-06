@@ -34,4 +34,4 @@ jobs:
       - name: Deploy to COS
         run: |
           # 递归上传所有文件
-          coscmd upload -r . / --delete
+          coscmd upload -r . / --delete  --content-type auto
