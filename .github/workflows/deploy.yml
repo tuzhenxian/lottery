@@ -1,0 +1,39 @@
+name: Deploy to Tencent COS
+
+on:
+  push:
+    branches: [ main, master ]
+  
+  # 允许手动触发工作流
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      # 检出代码
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      # 部署到腾讯云 COS
+      - name: Deploy to Tencent COS
+        uses: tencentcloud/tencentcloud-cos-action@v1
+        with:
+          # 腾讯云区域，例如 ap-beijing, ap-shanghai 等
+          region: 'ap-shanghai'
+          # COS 存储桶名称
+          bucket: 'lucky-1378323346.cos-website'
+          # 本地资源路径，相对于工作目录
+          local_path: '.'
+          # COS 存储桶路径
+          cos_path: '/'
+          # 是否递归上传
+          recursive: true
+          # 覆盖模式
+          overwrite: true
+          # 设置 Cache-Control 头
+          cache_control: 'public, max-age=600'
+        env:
+          # 从 GitHub Secrets 获取腾讯云密钥
+          SECRET_ID: ${{ secrets.TENCENT_SECRET_ID }}
+          SECRET_KEY: ${{ secrets.TENCENT_SECRET_KEY }}
