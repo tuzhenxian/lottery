@@ -28,7 +28,7 @@ jobs:
       # 配置 coscmd
       - name: Configure coscmd
         run: |
-          coscmd config -a ${{ secrets.TENCENT_SECRET_ID }} -s ${{ secrets.TENCENT_SECRET_KEY }} -b lucky-1378323346.cos-website -r ap-shanghai
+          coscmd config -a ${{ secrets.TENCENT_SECRET_ID }} -s ${{ secrets.TENCENT_SECRET_KEY }} -b lucky-1378323346 -r ap-shanghai
       
       # 部署到 COS
       - name: Deploy to COS
