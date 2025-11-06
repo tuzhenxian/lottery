@@ -33,5 +33,5 @@ jobs:
       # 部署到 COS
       - name: Deploy to COS
         run: |
-          # 递归上传所有文件，排除 .git 目录和 .github 目录
-          coscmd upload -r . / --delete --include-dir --no-md5 --thread-num 10 --exclude ".git/*" --exclude ".github/*"
+          # 递归上传所有文件
+          coscmd upload -r . / --delete
