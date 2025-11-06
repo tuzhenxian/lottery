@@ -138,11 +138,16 @@
         var drawnTopics = JSON.parse(localStorage.getItem(storageKeyPrefix + 'drawnTopics')) || {};
         var remainingTopics = [];
         
+        // 获取已抽取的序号 - 使用localStorage确保跨设备共享
+        var drawnNumbers = JSON.parse(localStorage.getItem(storageKeyPrefix + 'drawnNumbers')) || {};
+        var remainingNumbers = [];
+        
         // 检查当前用户是否已经抽取过题目
         var hasDrawn = localStorage.getItem(storageKeyPrefix + 'user_' + (currentUserName || 'anonymous')) === 'true';
         
-        // 获取抽取者信息
+        // 获取抽取者信息和序号信息
         var topicDrawers = JSON.parse(localStorage.getItem(storageKeyPrefix + 'topicDrawers')) || {};
+        var topicNumbers = JSON.parse(localStorage.getItem(storageKeyPrefix + 'topicNumbers')) || {};
         
         // 获取已使用的用户名
         var usedUserNames = JSON.parse(localStorage.getItem(storageKeyPrefix + 'usedUserNames')) || [];
@@ -151,7 +156,9 @@
         function checkTopicStatus() {
             // 从localStorage获取最新状态
             var latestDrawnTopics = JSON.parse(localStorage.getItem(storageKeyPrefix + 'drawnTopics')) || {};
+            var latestDrawnNumbers = JSON.parse(localStorage.getItem(storageKeyPrefix + 'drawnNumbers')) || {};
             var latestTopicDrawers = JSON.parse(localStorage.getItem(storageKeyPrefix + 'topicDrawers')) || {};
+            var latestTopicNumbers = JSON.parse(localStorage.getItem(storageKeyPrefix + 'topicNumbers')) || {};
             var latestUsedUserNames = JSON.parse(localStorage.getItem(storageKeyPrefix + 'usedUserNames')) || [];
             
             // 检查是否有更新
@@ -165,10 +172,26 @@
                 }
             }
             
+            // 更新序号状态
+            for (var num in latestDrawnNumbers) {
+                if (!drawnNumbers[num]) {
+                    drawnNumbers[num] = true;
+                    hasUpdates = true;
+                }
+            }
+            
             // 更新抽取者信息
             for (var topicId in latestTopicDrawers) {
                 if (topicDrawers[topicId] !== latestTopicDrawers[topicId]) {
                     topicDrawers[topicId] = latestTopicDrawers[topicId];
+                    hasUpdates = true;
+                }
+            }
+            
+            // 更新序号信息
+            for (var topicId in latestTopicNumbers) {
+                if (topicNumbers[topicId] !== latestTopicNumbers[topicId]) {
+                    topicNumbers[topicId] = latestTopicNumbers[topicId];
                     hasUpdates = true;
                 }
             }
@@ -197,28 +220,46 @@
         // 每1秒检查一次题目状态
         setInterval(checkTopicStatus, 1000);
         
-        // 初始化题目池
+        // 初始化题目池和序号池
         function initGiftPool() {
             // 根据用户身份过滤可抽取的题目池
             if (isAdmin) {
-                // 管理员只能抽取题目1
+                // 管理员只能抽取题目5
                 remainingTopics = topics.filter(function(topic) {
-                    return topic.id === 1 && !drawnTopics[topic.id];
+                    return topic.id === 5 && !drawnTopics[topic.id];
                 });
             } else {
-                // 普通用户只能抽取除第一题外的所有题目
+                // 普通用户只能抽取除题目5外的所有题目（如果题目5已被管理员抽取）
                 remainingTopics = topics.filter(function(topic) {
-                    return topic.id !== 1 && !drawnTopics[topic.id];
+                    return (!isAdmin || topic.id !== 5) && !drawnTopics[topic.id];
                 });
+            }
+            
+            // 初始化序号池（1-13）
+            remainingNumbers = [];
+            for (var i = 1; i <= 13; i++) {
+                // 管理员只能抽到序号10（如果尚未被抽取）
+                if (isAdmin) {
+                    if (i === 10 && !drawnNumbers[i]) {
+                        remainingNumbers.push(i);
+                    }
+                } else {
+                    // 普通用户不能抽到序号10（如果尚未被管理员抽取）
+                    if (i !== 10 || drawnNumbers[10]) {
+                        if (!drawnNumbers[i]) {
+                            remainingNumbers.push(i);
+                        }
+                    }
+                }
             }
             
             // 更新题目池显示
             updateGiftPoolDisplay();
             
-            // 如果没有剩余题目或普通用户已经抽取过，禁用抽题按钮
-            if (remainingTopics.length === 0) {
+            // 如果没有剩余题目或序号，或普通用户已经抽取过，禁用抽题按钮
+            if (remainingTopics.length === 0 || remainingNumbers.length === 0) {
                 document.getElementById('drawButton').disabled = true;
-                document.getElementById('giftResult').innerText = '题目已抽完';
+                document.getElementById('giftResult').innerText = '题目或序号已抽完';
             } else if (!isAdmin && hasDrawn) {
                 document.getElementById('drawButton').disabled = true;
                 document.getElementById('giftResult').innerText = '您已经抽取过题目，每个用户只能抽取一次';
@@ -230,8 +271,9 @@
             var giftPoolElement = document.getElementById('giftPool');
             giftPoolElement.innerHTML = '';
             
-            // 获取抽取者信息
+            // 获取抽取者信息和序号信息
             var drawers = topicDrawers;
+            var numbers = topicNumbers;
             
             topics.forEach(function(topic) {
                 // 所有用户都能看到所有题目
@@ -242,7 +284,8 @@
                 var statusSpan = document.createElement('span');
                 if (drawnTopics[topic.id]) {
                     var drawerInfo = drawers[topic.id] || '某用户';
-                    statusSpan.innerText = '已被' + drawerInfo + '抽取';
+                    var numberInfo = numbers[topic.id] ? '，序号：' + numbers[topic.id] : '';
+                    statusSpan.innerText = '已被' + drawerInfo + '抽取' + numberInfo;
                     statusSpan.style.color = '#e74c3c';
                 } else {
                     statusSpan.innerText = '未抽取';
@@ -255,7 +298,7 @@
             });
         }
         
-        // 抽取题目
+        // 抽取题目和序号
         function drawGift() {
             // 检查非管理员用户是否已输入用户名
             if (!isAdmin && !currentUserName) {
@@ -271,44 +314,60 @@
                 return;
             }
             
-            if (remainingTopics.length === 0) {
+            if (remainingTopics.length === 0 || remainingNumbers.length === 0) {
                 return;
             }
             
             var drawnTopic;
+            var drawnNumber;
             
             if (isAdmin) {
-                // 管理员只能抽到题目1
+                // 管理员只能抽到题目5
                 drawnTopic = topics.find(function(topic) {
-                    return topic.id === 1 && !drawnTopics[topic.id];
+                    return topic.id === 5 && !drawnTopics[topic.id];
                 });
                 
-                // 如果题目1已被抽取，则显示提示信息
-                if (!drawnTopic) {
-                    document.getElementById('giftResult').innerText = '题目1已被抽取，没有可抽取的题目';
+                // 管理员只能抽到序号10
+                drawnNumber = 10;
+                
+                // 如果题目5或序号10已被抽取，则显示提示信息
+                if (!drawnTopic || drawnNumbers[drawnNumber]) {
+                    document.getElementById('giftResult').innerText = '题目5或序号10已被抽取，没有可抽取的内容';
                     document.getElementById('drawButton').disabled = true;
                     return;
                 }
             } else {
-                // 普通用户随机抽取除第一题外的所有题目
+                // 普通用户随机抽取可用题目
                 var randomIndex = Math.floor(Math.random() * remainingTopics.length);
                 drawnTopic = remainingTopics[randomIndex];
+                
+                // 普通用户随机抽取可用序号
+                var randomNumberIndex = Math.floor(Math.random() * remainingNumbers.length);
+                drawnNumber = remainingNumbers[randomNumberIndex];
             }
             
-            if (!drawnTopic) {
-                document.getElementById('giftResult').innerText = '题目已抽完';
+            if (!drawnTopic || !drawnNumber) {
+                document.getElementById('giftResult').innerText = '题目或序号已抽完';
                 document.getElementById('drawButton').disabled = true;
                 return;
             }
             
-            // 标记为已抽取
+            // 标记题目为已抽取
             drawnTopics[drawnTopic.id] = true;
             localStorage.setItem(storageKeyPrefix + 'drawnTopics', JSON.stringify(drawnTopics));
+            
+            // 标记序号为已抽取
+            drawnNumbers[drawnNumber] = true;
+            localStorage.setItem(storageKeyPrefix + 'drawnNumbers', JSON.stringify(drawnNumbers));
             
             // 记录抽取者信息
             var drawerName = currentUserName || (isAdmin ? '管理员' : '匿名用户' + Math.floor(Math.random() * 1000));
             topicDrawers[drawnTopic.id] = drawerName;
             localStorage.setItem(storageKeyPrefix + 'topicDrawers', JSON.stringify(topicDrawers));
+            
+            // 记录序号信息
+            topicNumbers[drawnTopic.id] = drawnNumber;
+            localStorage.setItem(storageKeyPrefix + 'topicNumbers', JSON.stringify(topicNumbers));
             
             // 如果是普通用户，标记该用户已经抽取过题目
             if (!isAdmin) {
@@ -317,7 +376,7 @@
             }
             
             // 显示抽取结果
-            document.getElementById('giftResult').innerText = '您的题目是：' + drawnTopic.name;
+            document.getElementById('giftResult').innerText = '您的题目是：' + drawnTopic.name + '，序号是：' + drawnNumber;
             
             // 更新题目池
             initGiftPool();
@@ -334,7 +393,9 @@
             if (confirm('确定要重置题目池吗？所有抽奖记录将被清除！')) {
                 // 清除当前会话的所有抽奖记录
                 localStorage.removeItem(storageKeyPrefix + 'drawnTopics');
+                localStorage.removeItem(storageKeyPrefix + 'drawnNumbers');
                 localStorage.removeItem(storageKeyPrefix + 'topicDrawers');
+                localStorage.removeItem(storageKeyPrefix + 'topicNumbers');
                 localStorage.removeItem(storageKeyPrefix + 'usedUserNames');
                 
                 // 清除所有用户的抽取状态
@@ -347,7 +408,9 @@
                 
                 // 重置内存中的状态
                 drawnTopics = {};
+                drawnNumbers = {};
                 topicDrawers = {};
+                topicNumbers = {};
                 usedUserNames = [];
                 hasDrawn = false;
                 
@@ -357,7 +420,7 @@
                 document.getElementById('giftResult').innerText = '点击下方按钮抽取题目';
                 
                 // 添加提示信息，显示当前用户身份
-                console.log('管理员模式：重置成功，只能抽取题目1');
+                console.log('管理员模式：重置成功，只能抽取题目5，序号10');
             }
         }
         
@@ -431,10 +494,10 @@
         
         // 在控制台显示当前用户身份
         if (isAdmin) {
-            console.log('管理员模式：只能抽取题目1');
+            console.log('管理员模式：只能抽取题目5，序号10');
             // 不再为管理员添加标记，确保与普通用户界面一致
         } else {
-            console.log('普通用户模式：只能抽取除第一题外的所有题目');
+            console.log('普通用户模式：只能抽取除题目5外的所有题目（如果未被抽取）和除序号10外的所有序号（如果未被抽取）');
         }
     })();
 </script>
