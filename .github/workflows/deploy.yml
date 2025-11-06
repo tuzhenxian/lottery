@@ -23,7 +23,7 @@ jobs:
       
       # 安装 coscmd
       - name: Install coscmd
-        run: pip install coscmd
+        run: pip install --upgrade coscmd
       
       # 配置 coscmd
       - name: Configure coscmd
