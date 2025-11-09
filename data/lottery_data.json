@@ -1,5 +1,15 @@
 {
-  "usedNumbers": [],
-  "topicDrawers": {},
-  "topicNumbers": {}
+  "usedNumbers": [
+    10
+  ],
+  "topicDrawers": {
+    "5": [
+      "小黄"
+    ]
+  },
+  "topicNumbers": {
+    "5": {
+      "小黄": 10
+    }
+  }
 }

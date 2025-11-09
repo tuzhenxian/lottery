@@ -210,6 +210,9 @@
         // 服务端API基础URL
         var API_BASE_URL = 'http://localhost:3000/api';
         
+        // 初始化数据，从服务端同步
+        initFromServer();
+        
         // 从服务端获取已使用的序号
         function fetchUsedNumbers() {
             return fetch(API_BASE_URL + '/used-numbers')
@@ -347,12 +350,109 @@
         var usedUserNames = JSON.parse(localStorage.getItem(storageKeyPrefix + 'usedUserNames')) || [];
         // WebSocket连接
         var socket = null;
+        var isWebSocketConnected = false;
+        var websocketUrl = 'ws://localhost:3000';
+        
+        // 初始化WebSocket连接
+        function initWebSocket() {
+            try {
+                // 如果已连接，则断开旧连接
+                if (socket && socket.readyState === WebSocket.OPEN) {
+                    socket.close();
+                }
+                
+                // 创建新的WebSocket连接
+                socket = new WebSocket(websocketUrl);
+                
+                // 连接成功事件
+                socket.onopen = function() {
+                    console.log('WebSocket连接成功');
+                    isWebSocketConnected = true;
+                };
+                
+                // 接收消息事件
+                socket.onmessage = function(event) {
+                    try {
+                        var data = JSON.parse(event.data);
+                        console.log('收到WebSocket数据:', data);
+                        
+                        // 处理初始数据
+                        if (data.type === 'initial-data' || data.usedNumbers) {
+                            updateLocalData(data);
+                        }
+                        // 处理数据更新
+                        else if (data.type === 'data-update' || data.usedNumbers) {
+                            updateLocalData(data);
+                            // 更新UI显示
+                            updateResultsTable();
+                            initGiftPool();
+                        }
+                    } catch (error) {
+                        console.error('解析WebSocket消息失败:', error);
+                    }
+                };
+                
+                // 连接关闭事件
+                socket.onclose = function() {
+                    console.log('WebSocket连接关闭');
+                    isWebSocketConnected = false;
+                    // 尝试重连
+                    setTimeout(initWebSocket, 5000);
+                };
+                
+                // 连接错误事件
+                socket.onerror = function(error) {
+                    console.error('WebSocket错误:', error);
+                };
+                
+            } catch (error) {
+                console.error('初始化WebSocket失败:', error);
+                // 尝试重连
+                setTimeout(initWebSocket, 5000);
+            }
+        }
+        
+        // 根据服务端数据更新本地状态
+        function updateLocalData(serverData) {
+            if (!serverData) return;
+            
+            // 更新已使用序号
+            if (serverData.usedNumbers && Array.isArray(serverData.usedNumbers)) {
+                usedNumbers.clear();
+                serverData.usedNumbers.forEach(num => usedNumbers.add(parseInt(num)));
+                console.log('从服务端更新已使用序号:', Array.from(usedNumbers));
+            }
+            
+            // 更新抽取者信息
+            if (serverData.topicDrawers) {
+                topicDrawers = serverData.topicDrawers;
+                console.log('从服务端更新抽取者信息');
+            }
+            
+            // 更新序号信息
+            if (serverData.topicNumbers) {
+                topicNumbers = serverData.topicNumbers;
+                console.log('从服务端更新序号信息');
+            }
+            
+            // 更新本地存储作为备份
+            try {
+                localStorage.setItem(storageKeyPrefix + 'usedNumbers', JSON.stringify(Array.from(usedNumbers)));
+                localStorage.setItem(storageKeyPrefix + 'topicDrawers', JSON.stringify(topicDrawers));
+                localStorage.setItem(storageKeyPrefix + 'topicNumbers', JSON.stringify(topicNumbers));
+            } catch (e) {
+                console.error('更新本地存储备份失败:', e);
+            }
+        }
         
         // 初始化时从服务端获取数据
         function initFromServer() {
             // 首先清空本地状态，确保从服务端获取最新数据
             usedNumbers.clear();
             remainingNumbers = [];
+            
+            // 初始化WebSocket连接，实现实时数据同步
+            initWebSocket();
             
             Promise.all([fetchUsedNumbers(), fetchDrawRecords()])
                 .then(() => {
@@ -868,6 +968,18 @@
                         // 显示抽取成功结果，重点突出答题序号
                         document.getElementById('giftResult').innerText = '您的题目是：' + drawnTopic.name + '，答题序号是：' + drawnNumber;
                         console.log('抽取成功并通过服务器验证:', {topic: drawnTopic.name, number: drawnNumber, user: drawerName});
+                        
+                        // 通过WebSocket广播更新到所有设备
+                        if (isWebSocketConnected && socket && socket.readyState === WebSocket.OPEN) {
+                            const updateData = {
+                                type: 'data-update',
+                                usedNumbers: Array.from(usedNumbers),
+                                topicDrawers: topicDrawers,
+                                topicNumbers: topicNumbers
+                            };
+                            socket.send(JSON.stringify(updateData));
+                            console.log('通过WebSocket广播更新:', updateData);
+                        }
                     } else {
                         // 序号验证失败但已本地保存，仍显示成功结果但记录警告
                         // 这样用户体验更好，不会看到'抽取失败'但结果实际已存在的矛盾情况
