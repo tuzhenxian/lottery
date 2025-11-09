@@ -35,4 +35,4 @@ jobs:
         run: |
           # 递归上传所有文件
           # 递归上传所有文件并设置正确的Content-Type
-          coscmd upload -r . / --delete --content-type "*.html:text/html" --content-type "*.css:text/css" --content-type "*.js:application/javascript" --content-type "*.png:image/png" --content-type "*.jpg:image/jpeg" --content-type "*.svg:image/svg+xml"
+          coscmd upload -r . / --delete
