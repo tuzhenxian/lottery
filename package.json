@@ -1,0 +1,17 @@
+{
+  "name": "lottery-system",
+  "version": "1.0.0",
+  "description": "抽奖系统服务端",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "node-fetch": "^3.3.2",
+    "socket.io": "^4.5.4"
+  },
+  "author": "",
+  "license": "MIT"
+}

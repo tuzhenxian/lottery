@@ -5,6 +5,8 @@
     <meta http-equiv="content-type" content="text/html; charset=utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=0"/>
     <title>抽题目</title>
+    <!-- Socket.io客户端库 -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <link rel="stylesheet" type="text/css" href="css/reset.css">
     <link rel="stylesheet" type="text/css" href="css/wall.css">
     <style type="text/css">
@@ -93,6 +95,50 @@
         .gift-list li:last-child {
             border-bottom: none;
         }
+        
+        /* 抽取结果表样式 */
+        .draw-results {
+            background-color: #fff;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
+            overflow-x: auto;
+        }
+        
+        .draw-results h2 {
+            font-size: 18px;
+            color: #333;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        
+        .results-table th,
+        .results-table td {
+            padding: 10px;
+            text-align: center;
+            border: 1px solid #e0e0e0;
+        }
+        
+        .results-table th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .results-table tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+        
+        .results-table tr:hover {
+            background-color: #e9ecef;
+        }
     </style>
 </head>
 <body>
@@ -108,11 +154,30 @@
         <div class="gift-image" id="giftIcon">🎁</div>
         <div class="gift-result" id="giftResult">点击下方按钮抽取题目</div>
         <button class="draw-button" id="drawButton">抽取题目</button>
+        <button class="draw-button" id="resetButton" style="background-color: #f39c12; margin-top: 10px;">🔔 重置抽取</button>
     </div>
     
     <div class="gift-list">
         <h2>题目列表</h2>
         <ul id="giftPool"></ul>
+    </div>
+    
+    <!-- 抽取结果表 -->
+    <div class="draw-results">
+        <h2>抽取结果表</h2>
+        <table class="results-table" id="resultsTable">
+            <tbody id="resultsBody">
+                <!-- 结果将动态填充 -->
+                <tr><td colspan="3" style="text-align: center; color: #999;">暂无抽取记录</td></tr>
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- 管理员指定抽取区域 -->
+    <div id="adminSelectArea" style="display: none; margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 8px; background-color: #f8f9fa;">
+        <h3 style="margin-top: 0; color: #333;">管理员模式</h3>
+        <p style="color: blue; font-weight: bold;">自动抽取第5题（序号10），无需手动选择</p>
+        <button id="resetButton" onclick="resetAllData()" style="margin-top: 10px; background-color: #dc3545; color: white; border: none; border-radius: 4px; padding: 8px 15px; cursor: pointer;">重置所有数据</button>
     </div>
 </div>
 
@@ -130,9 +195,132 @@
         // 判断是否为管理员
         var isAdmin = getUrlParam('user') === 'admin';
         
+        // 根据管理员权限控制重置按钮的显示
+        function updateAdminControlsVisibility() {
+            var resetButtons = document.querySelectorAll('#resetButton');
+            resetButtons.forEach(function(button) {
+                button.style.display = isAdmin ? 'block' : 'none';
+            });
+        }
+        
         // 生成或获取唯一的抽奖会话ID
         var sessionId = getUrlParam('session') || 'default-session';
         var storageKeyPrefix = 'lottery_' + sessionId + '_';
+        
+        // 服务端API基础URL
+        var API_BASE_URL = 'http://localhost:3000/api';
+        
+        // 从服务端获取已使用的序号
+        function fetchUsedNumbers() {
+            return fetch(API_BASE_URL + '/used-numbers')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('获取已使用序号失败: ' + response.statusText);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // 清空并重新添加序号，确保状态正确
+                    usedNumbers.clear();
+                    if (data && data.usedNumbers && Array.isArray(data.usedNumbers)) {
+                        data.usedNumbers.forEach(num => usedNumbers.add(parseInt(num)));
+                    }
+                    console.log('已同步服务端已使用序号:', Array.from(usedNumbers));
+                    
+                    // 更新本地存储作为备份
+                    try {
+                        localStorage.setItem(storageKeyPrefix + 'usedNumbers', JSON.stringify(Array.from(usedNumbers)));
+                    } catch (e) {
+                        console.error('更新本地存储失败:', e);
+                    }
+                    
+                    return usedNumbers;
+                })
+                .catch(error => {
+                    console.error('获取已使用序号失败:', error);
+                    // 如果服务端请求失败，清空本地序号信息以确保可以正常抽取
+                    try {
+                        localStorage.removeItem(storageKeyPrefix + 'usedNumbers');
+                        usedNumbers.clear();
+                        console.log('已清空本地序号信息，使用空序号池');
+                    } catch (e) {
+                        console.error('清空本地序号数据失败:', e);
+                    }
+                    return usedNumbers;
+                });
+        }
+        
+        // 验证序号是否可用，并在可用时标记为已使用
+        function validateAndMarkNumber(number, topicId, userName) {
+            console.log('验证序号:', number, '题ID:', topicId, '用户名:', userName);
+            return fetch(API_BASE_URL + '/claim-number', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    number: number,
+                    topicId: topicId,
+                    userName: userName
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('序号验证失败: ' + response.statusText);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('序号验证结果:', data);
+                if (data && data.success) {
+                    // 如果验证通过，更新本地的已使用序号集合
+                    usedNumbers.add(number);
+                    return true;
+                } else {
+                    // 如果服务端返回失败，清空本地序号池并重新初始化
+                    console.error('序号验证失败:', data && data.message || '序号已被使用');
+                    usedNumbers.clear();
+                    remainingNumbers = [];
+                    fetchUsedNumbers().then(() => {
+                        initGiftPool();
+                    });
+                    return false;
+                }
+            })
+            .catch(error => {
+                console.error('序号验证错误:', error);
+                // 网络错误时也清空本地序号信息，确保可以重试
+                try {
+                    usedNumbers.clear();
+                    remainingNumbers = [];
+                    console.log('网络错误，已清空本地序号信息');
+                } catch (e) {
+                    console.error('清空本地序号失败:', e);
+                }
+                return false;
+            });
+        }
+        
+        // 从服务端获取抽取记录
+        function fetchDrawRecords() {
+            return fetch(API_BASE_URL + '/draw-records')
+                .then(response => response.json())
+                .then(data => {
+                    if (data) {
+                        if (data.topicDrawers) {
+                            topicDrawers = data.topicDrawers;
+                        }
+                        if (data.topicNumbers) {
+                            topicNumbers = data.topicNumbers;
+                        }
+                    }
+                    return { topicDrawers, topicNumbers };
+                })
+                .catch(error => {
+                    console.error('获取抽取记录失败:', error);
+                    return { topicDrawers, topicNumbers };
+                });
+        }
         
         // 获取已抽取的题目 - 使用localStorage确保跨设备共享
         var drawnTopics = JSON.parse(localStorage.getItem(storageKeyPrefix + 'drawnTopics')) || {};
@@ -141,6 +329,12 @@
         // 获取已抽取的序号 - 使用localStorage确保跨设备共享
         var drawnNumbers = JSON.parse(localStorage.getItem(storageKeyPrefix + 'drawnNumbers')) || {};
         var remainingNumbers = [];
+        
+        // 全局已使用的序号集合，确保唯一性
+        var usedNumbers = new Set(Object.keys(drawnNumbers).map(Number));
+        
+        // 注意：现在已使用的序号由服务端管理，通过fetchUsedNumbers函数获取
+        // usedNumbers集合将在initFromServer中初始化
         
         // 检查当前用户是否已经抽取过题目
         var hasDrawn = localStorage.getItem(storageKeyPrefix + 'user_' + (currentUserName || 'anonymous')) === 'true';
@@ -151,104 +345,119 @@
         
         // 获取已使用的用户名
         var usedUserNames = JSON.parse(localStorage.getItem(storageKeyPrefix + 'usedUserNames')) || [];
+        // WebSocket连接
+        var socket = null;
         
-        // 定期检查题目状态更新
-        function checkTopicStatus() {
-            // 从localStorage获取最新状态
-            var latestDrawnTopics = JSON.parse(localStorage.getItem(storageKeyPrefix + 'drawnTopics')) || {};
-            var latestDrawnNumbers = JSON.parse(localStorage.getItem(storageKeyPrefix + 'drawnNumbers')) || {};
-            var latestTopicDrawers = JSON.parse(localStorage.getItem(storageKeyPrefix + 'topicDrawers')) || {};
-            var latestTopicNumbers = JSON.parse(localStorage.getItem(storageKeyPrefix + 'topicNumbers')) || {};
-            var latestUsedUserNames = JSON.parse(localStorage.getItem(storageKeyPrefix + 'usedUserNames')) || [];
+        // 初始化时从服务端获取数据
+        function initFromServer() {
+            // 首先清空本地状态，确保从服务端获取最新数据
+            usedNumbers.clear();
+            remainingNumbers = [];
             
-            // 检查是否有更新
-            var hasUpdates = false;
-            
-            // 更新抽取状态
-            for (var topicId in latestDrawnTopics) {
-                if (!drawnTopics[topicId]) {
-                    drawnTopics[topicId] = true;
-                    hasUpdates = true;
-                }
+            Promise.all([fetchUsedNumbers(), fetchDrawRecords()])
+                .then(() => {
+                    console.log('服务端数据同步完成');
+                    console.log('当前已使用序号:', Array.from(usedNumbers));
+                    // 更新UI显示
+                    initGiftPool();
+                })
+                .catch(error => {
+                    console.error('服务端数据同步失败:', error);
+                    // 失败时清空本地存储中的序号信息，确保可以正常抽取
+                    try {
+                        localStorage.removeItem(storageKeyPrefix + 'usedNumbers');
+                        usedNumbers.clear();
+                    } catch (e) {
+                        console.error('清空本地序号数据失败:', e);
+                    }
+                    initGiftPool();
+                });
+        }
+        
+        // 重置所有数据
+        function resetAllData() {
+            if (!isAdmin) {
+                alert('您没有权限执行此操作！');
+                return;
             }
             
-            // 更新序号状态
-            for (var num in latestDrawnNumbers) {
-                if (!drawnNumbers[num]) {
-                    drawnNumbers[num] = true;
-                    hasUpdates = true;
-                }
-            }
-            
-            // 更新抽取者信息
-            for (var topicId in latestTopicDrawers) {
-                if (topicDrawers[topicId] !== latestTopicDrawers[topicId]) {
-                    topicDrawers[topicId] = latestTopicDrawers[topicId];
-                    hasUpdates = true;
-                }
-            }
-            
-            // 更新序号信息
-            for (var topicId in latestTopicNumbers) {
-                if (topicNumbers[topicId] !== latestTopicNumbers[topicId]) {
-                    topicNumbers[topicId] = latestTopicNumbers[topicId];
-                    hasUpdates = true;
-                }
-            }
-            
-            // 更新已使用用户名
-            for (var i = 0; i < latestUsedUserNames.length; i++) {
-                if (!usedUserNames.includes(latestUsedUserNames[i])) {
-                    usedUserNames.push(latestUsedUserNames[i]);
-                    hasUpdates = true;
-                }
-            }
-            
-            // 检查当前用户是否已抽取
-            var userDrawnStatus = localStorage.getItem(storageKeyPrefix + 'user_' + (currentUserName || 'anonymous'));
-            if (userDrawnStatus === 'true' && !hasDrawn) {
-                hasDrawn = true;
-                hasUpdates = true;
-            }
-            
-            // 如果有更新，刷新题目池
-            if (hasUpdates) {
-                initGiftPool();
+            if (confirm('确定要重置所有数据吗？此操作不可撤销！')) {
+                document.getElementById('giftResult').innerText = '正在重置数据，请稍候...';
+                
+                fetch(API_BASE_URL + '/reset', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ isAdmin: true })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // 清空本地数据
+                        try {
+                            localStorage.removeItem(storageKeyPrefix + 'usedNumbers');
+                            localStorage.removeItem(storageKeyPrefix + 'drawnTopics');
+                            localStorage.removeItem(storageKeyPrefix + 'topicDrawers');
+                            localStorage.removeItem(storageKeyPrefix + 'topicNumbers');
+                            
+                            // 清空全局变量
+                        usedNumbers.clear();
+                        remainingNumbers = [];
+                        drawnTopics = {};
+                        topicDrawers = {};
+                        topicNumbers = {};
+                        hasDrawn = false;
+                            
+                            // 重新初始化
+                            initGiftPool();
+                            document.getElementById('giftResult').innerText = '数据重置成功！';
+                            
+                            // 启用抽取按钮
+                            document.getElementById('drawButton').disabled = false;
+                        } catch (e) {
+                            console.error('清空本地数据失败:', e);
+                        }
+                    } else {
+                        document.getElementById('giftResult').innerText = '重置失败: ' + (data.message || '未知错误');
+                    }
+                })
+                .catch(error => {
+                    console.error('重置数据请求失败:', error);
+                    document.getElementById('giftResult').innerText = '重置请求失败，请重试！';
+                });
             }
         }
         
-        // 每1秒检查一次题目状态
-        setInterval(checkTopicStatus, 1000);
+        // 使用WebSocket代替轮询，无需定期检查和轮询函数
         
         // 初始化题目池和序号池
         function initGiftPool() {
-            // 根据用户身份过滤可抽取的题目池
+            // 根据用户身份过滤可抽取的题目池 - 现在题目可以重复抽取，所以不过滤已抽取的题目
             if (isAdmin) {
                 // 管理员只能抽取题目5
                 remainingTopics = topics.filter(function(topic) {
-                    return topic.id === 5 && !drawnTopics[topic.id];
+                    return topic.id === 5;
                 });
             } else {
-                // 普通用户只能抽取除题目5外的所有题目（如果题目5已被管理员抽取）
+                // 普通用户只能抽取除题目5外的所有题目
                 remainingTopics = topics.filter(function(topic) {
-                    return (!isAdmin || topic.id !== 5) && !drawnTopics[topic.id];
+                    return topic.id !== 5;
                 });
             }
             
-            // 初始化序号池（1-13）
+            // 初始化序号池（1-13），排除已使用的序号
             remainingNumbers = [];
             for (var i = 1; i <= 13; i++) {
-                // 管理员只能抽到序号10（如果尚未被抽取）
+                // 管理员只能抽到序号10
                 if (isAdmin) {
-                    if (i === 10 && !drawnNumbers[i]) {
+                    if (i === 10 && !usedNumbers.has(i)) {
                         remainingNumbers.push(i);
                     }
                 } else {
-                    // 普通用户不能抽到序号10（如果尚未被管理员抽取）
-                    if (i !== 10 || drawnNumbers[10]) {
-                        if (!drawnNumbers[i]) {
-                            remainingNumbers.push(i);
-                        }
+                    // 普通用户不能抽到序号10，且不能抽到已使用的序号
+                    if (i !== 10 && !usedNumbers.has(i)) {
+                        remainingNumbers.push(i);
                     }
                 }
             }
@@ -256,13 +465,82 @@
             // 更新题目池显示
             updateGiftPoolDisplay();
             
-            // 如果没有剩余题目或序号，或普通用户已经抽取过，禁用抽题按钮
-            if (remainingTopics.length === 0 || remainingNumbers.length === 0) {
-                document.getElementById('drawButton').disabled = true;
-                document.getElementById('giftResult').innerText = '题目或序号已抽完';
-            } else if (!isAdmin && hasDrawn) {
+            // 检查用户是否已经抽取过题目
+            // 注意：这里不再检查题目是否被抽完，因为题目可以重复抽取
+            if (!isAdmin && hasDrawn) {
                 document.getElementById('drawButton').disabled = true;
                 document.getElementById('giftResult').innerText = '您已经抽取过题目，每个用户只能抽取一次';
+            }
+            
+            // 根据管理员权限控制重置按钮的显示
+            updateAdminControlsVisibility();
+        }
+        
+        // 更新抽取结果表
+        function updateResultsTable() {
+            var resultsBody = document.getElementById('resultsBody');
+            resultsBody.innerHTML = '';
+            
+            // 收集所有抽取记录
+            var allRecords = [];
+            
+            // 遍历topicNumbers获取所有抽取记录
+            Object.keys(topicNumbers).forEach(function(topicId) {
+                var topic = topics.find(function(t) { return t.id == topicId; });
+                if (!topic) return;
+                
+                var userNumbers = topicNumbers[topicId];
+                if (typeof userNumbers === 'object') {
+                    Object.keys(userNumbers).forEach(function(userName) {
+                        var number = userNumbers[userName];
+                        allRecords.push({
+                            number: number, // 答题序号
+                            userName: userName,
+                            topic: topic.name,
+                            topicId: topicId
+                        });
+                    });
+                }
+            });
+            
+            // 按答题序号排序
+            allRecords.sort(function(a, b) {
+                return a.number - b.number;
+            });
+            
+            // 填充表格
+            if (allRecords.length === 0) {
+                var emptyRow = document.createElement('tr');
+                var emptyCell = document.createElement('td');
+                emptyCell.style.textAlign = 'center';
+                emptyCell.style.color = '#999';
+                emptyCell.innerText = '暂无抽取记录';
+                emptyRow.appendChild(emptyCell);
+                resultsBody.appendChild(emptyRow);
+            } else {
+                allRecords.forEach(function(record) {
+                    var row = document.createElement('tr');
+                    // 为每行添加样式
+                    row.style.border = '2px solid #3498db';
+                    row.style.borderRadius = '8px';
+                    row.style.marginBottom = '10px';
+                    row.style.display = 'block';
+                    row.style.padding = '15px';
+                    row.style.backgroundColor = '#f8f9fa';
+                    row.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+                    
+                    // 创建一个包含所有信息的单元格
+                    var contentCell = document.createElement('td');
+                    
+                    // 从题目中提取题目序号并移除顿号（如"一、" -> "一"）
+                    var topicNumber = record.topic.match(/^([一二三四五六七八九十]+)、/) ? record.topic.match(/^([一二三四五六七八九十]+)、/)[1] : '';
+                    
+                    // 设置内容格式：答题序号. 用户名 - 题目序号
+                    contentCell.innerHTML = '<strong style="font-size: 16px;">答题序号: ' + record.number + ' | 用户名: ' + record.userName + ' | 题目: ' + topicNumber + '</strong>';
+                    
+                    row.appendChild(contentCell);
+                    resultsBody.appendChild(row);
+                });
             }
         }
         
@@ -276,30 +554,109 @@
             var numbers = topicNumbers;
             
             topics.forEach(function(topic) {
-                // 所有用户都能看到所有题目
+                // 为每个题目创建一个列表项
                 var li = document.createElement('li');
-                var nameSpan = document.createElement('span');
-                nameSpan.innerText = topic.name;
                 
-                var statusSpan = document.createElement('span');
+                // 设置li样式为相对定位，以便绝对定位标签
+                li.style.position = 'relative';
+                li.style.padding = '15px';
+                li.style.marginBottom = '10px';
+                li.style.border = '1px solid #e0e0e0';
+                li.style.borderRadius = '8px';
+                li.style.minHeight = '60px'; // 确保有足够空间显示标签
+                
+                // 创建题目名称span，添加序号
+                var nameSpan = document.createElement('span');
+                // 获取题目在数组中的索引，加1作为序号
+                var topicIndex = topics.indexOf(topic) + 1;
+                nameSpan.innerText = topicIndex + '. ' + topic.name;
+                nameSpan.style.fontSize = '14px';
+                nameSpan.style.lineHeight = '1.5';
+                li.appendChild(nameSpan);
+                
+                // 创建标签容器，用于放置在右下角
+                var tagsContainer = document.createElement('div');
+                tagsContainer.style.position = 'absolute';
+                tagsContainer.style.bottom = '8px';
+                tagsContainer.style.right = '8px';
+                tagsContainer.style.display = 'flex';
+                tagsContainer.style.flexDirection = 'row'; // 横向排列
+                tagsContainer.style.flexWrap = 'wrap';
+                tagsContainer.style.gap = '8px';
+                
+                // 检查该题目是否被任何用户抽取过
                 if (drawnTopics[topic.id]) {
-                    var drawerInfo = drawers[topic.id] || '某用户';
-                    var numberInfo = numbers[topic.id] ? '，序号：' + numbers[topic.id] : '';
-                    statusSpan.innerText = '已被' + drawerInfo + '抽取' + numberInfo;
-                    statusSpan.style.color = '#e74c3c';
+                    // 已被抽取，显示抽取者姓名和答题序号（合并到一个标签）
+                    var drawerNames = drawers[topic.id] || '某用户';
+                    
+                    // 创建合并的信息标签
+                    var infoTag = document.createElement('span');
+                    
+                    // 获取当前题目的所有用户的序号信息
+                    if (numbers[topic.id] && typeof numbers[topic.id] === 'object') {
+                        // 新的数据结构，每个用户对应一个序号
+                        var combinedInfos = [];
+                        // 确保drawerNames是字符串类型
+                        var drawerNamesStr = typeof drawerNames === 'string' ? drawerNames : String(drawerNames);
+                        var drawersList = drawerNamesStr.split(', ');
+                        drawersList.forEach(function(drawer) {
+                            var number = numbers[topic.id][drawer];
+                            if (number) {
+                                combinedInfos.push(number + '.' + drawer);
+                            }
+                        });
+                        
+                        infoTag.innerText = combinedInfos.join(', ');
+                    } else {
+                        // 兼容旧的数据结构或没有序号信息
+                        // 确保drawerNames是字符串类型
+                        infoTag.innerText = typeof drawerNames === 'string' ? drawerNames : String(drawerNames);
+                    }
+                    
+                    // 设置标签样式
+                    infoTag.style.display = 'inline-block';
+                    infoTag.style.padding = '4px 10px';
+                    infoTag.style.backgroundColor = '#e74c3c';
+                    infoTag.style.color = 'white';
+                    infoTag.style.borderRadius = '12px';
+                    infoTag.style.fontSize = '12px';
+                    infoTag.style.fontWeight = 'bold';
+                    tagsContainer.appendChild(infoTag);
                 } else {
-                    statusSpan.innerText = '未抽取';
-                    statusSpan.style.color = '#27ae60';
+                    // 未被抽取，显示"未抽取"标签
+                    var statusTag = document.createElement('span');
+                    statusTag.innerText = '未抽取';
+                    statusTag.style.display = 'inline-block';
+                    statusTag.style.padding = '4px 10px';
+                    statusTag.style.backgroundColor = '#27ae60';
+                    statusTag.style.color = 'white';
+                    statusTag.style.borderRadius = '12px';
+                    statusTag.style.fontSize = '12px';
+                    statusTag.style.fontWeight = 'bold';
+                    tagsContainer.appendChild(statusTag);
                 }
                 
-                li.appendChild(nameSpan);
-                li.appendChild(statusSpan);
+                li.appendChild(tagsContainer);
                 giftPoolElement.appendChild(li);
             });
         }
         
+        // 初始化管理员选择区域
+        function initAdminSelectArea() {
+            if (!isAdmin) return;
+            
+            var adminArea = document.getElementById('adminSelectArea');
+            
+            // 显示管理员区域并添加提示信息
+            adminArea.style.display = 'block';
+            adminArea.innerHTML = '<p style="color: blue; font-weight: bold;">管理员模式：将自动抽取第5题（社区矫正对象禁毒法治教育课），序号10</p>';
+        }
+        
         // 抽取题目和序号
         function drawGift() {
+            console.log('开始抽取题目，剩余序号池:', remainingNumbers);
+            console.log('已使用序号:', Array.from(usedNumbers));
+            
             // 检查非管理员用户是否已输入用户名
             if (!isAdmin && !currentUserName) {
                 alert('请先输入您的姓名并保存，再进行抽取');
@@ -307,79 +664,289 @@
                 return;
             }
             
-            // 检查用户是否已经抽取过题目
-            if (!isAdmin && hasDrawn) {
-                document.getElementById('giftResult').innerText = '您已经抽取过题目，每个用户只能抽取一次';
-                document.getElementById('drawButton').disabled = true;
+            // 检查用户是否已经抽取过题目 - 兜底校验：检查所有可能的存储位置
+            if (!isAdmin && (hasDrawn || localStorage.getItem(storageKeyPrefix + 'user_' + (currentUserName || 'anonymous')))) {
+                // 查找用户已有的抽取结果
+                var existingResult = findUserExistingDrawResult(currentUserName);
+                
+                // 辅助函数：查找用户已有的抽取结果
+                function findUserExistingDrawResult(userName) {
+                    // 遍历所有已抽取的题目
+                    for (var topicId in topicNumbers) {
+                        if (topicNumbers.hasOwnProperty(topicId)) {
+                            var topicUsers = topicNumbers[topicId];
+                            // 检查该用户是否抽取过此题目
+                            if (topicUsers[userName]) {
+                                // 查找对应的题目名称
+                                var topic = topics.find(function(t) {
+                                    return t.id === parseInt(topicId);
+                                });
+                                
+                                return {
+                                    topicId: topicId,
+                                    topicName: topic ? topic.name : '未知题目',
+                                    number: topicUsers[userName]
+                                };
+                            }
+                        }
+                    }
+                    
+                    // 如果本地数据中未找到，尝试从localStorage恢复
+                    try {
+                        var storedTopicNumbers = JSON.parse(localStorage.getItem(storageKeyPrefix + 'topicNumbers'));
+                        if (storedTopicNumbers) {
+                            for (var tId in storedTopicNumbers) {
+                                if (storedTopicNumbers.hasOwnProperty(tId)) {
+                                    var storedUsers = storedTopicNumbers[tId];
+                                    if (storedUsers[userName]) {
+                                        var storedTopic = topics.find(function(t) {
+                                            return t.id === parseInt(tId);
+                                        });
+                                        
+                                        return {
+                                            topicId: tId,
+                                            topicName: storedTopic ? storedTopic.name : '未知题目',
+                                            number: storedUsers[userName]
+                                        };
+                                    }
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        console.error('从localStorage查找用户历史结果失败:', e);
+                    }
+                    
+                    return null; // 未找到结果
+                }
+                
+                // 如果找到用户已有的抽取结果，显示之前的结果
+                if (existingResult) {
+                    document.getElementById('giftResult').innerText = '您之前已抽取过题目！\n您的题目是：' + existingResult.topicName + '，答题序号是：' + existingResult.number;
+                    console.log('显示用户', currentUserName, '之前的抽取结果:', existingResult);
+                } else {
+                    // 用户友好提示，不是错误信息
+                    document.getElementById('giftResult').innerText = '您已经抽取过题目，每个用户只能抽取一次';
+                }
+                
+                // 确保按钮处于禁用状态
+                if (!document.getElementById('drawButton').disabled) {
+                    document.getElementById('drawButton').disabled = true;
+                }
+                
+                console.log('用户', currentUserName, '尝试重复抽取，已拦截');
                 return;
             }
             
-            if (remainingTopics.length === 0 || remainingNumbers.length === 0) {
-                return;
-            }
-            
-            var drawnTopic;
-            var drawnNumber;
+            // 管理员可以指定抽取题目和序号
+            var drawnTopic, drawnNumber;
             
             if (isAdmin) {
-                // 管理员只能抽到题目5
-                drawnTopic = topics.find(function(topic) {
-                    return topic.id === 5 && !drawnTopics[topic.id];
-                });
-                
-                // 管理员只能抽到序号10
+                // 管理员模式：直接抽取第5题，序号10
                 drawnNumber = 10;
                 
-                // 如果题目5或序号10已被抽取，则显示提示信息
-                if (!drawnTopic || drawnNumbers[drawnNumber]) {
-                    document.getElementById('giftResult').innerText = '题目5或序号10已被抽取，没有可抽取的内容';
-                    document.getElementById('drawButton').disabled = true;
+                // 查找第五题题目对象
+                drawnTopic = topics.find(function(topic) {
+                    return topic.id === 5;
+                });
+                
+                console.log('管理员直接抽取第5题，序号:', drawnNumber, '题目ID:', drawnTopic?.id || '未找到');
+                
+                if (!drawnTopic) {
+                    document.getElementById('giftResult').innerText = '未找到第5题';
                     return;
                 }
             } else {
-                // 普通用户随机抽取可用题目
-                var randomIndex = Math.floor(Math.random() * remainingTopics.length);
-                drawnTopic = remainingTopics[randomIndex];
+                // 普通用户模式：随机抽取
                 
-                // 普通用户随机抽取可用序号
+                // 确保remainingNumbers数组在开始前正确初始化
+                if (!remainingNumbers || remainingNumbers.length === 0) {
+                    console.log('序号池为空，重新初始化');
+                    initGiftPool();
+                    if (remainingNumbers.length === 0) {
+                        document.getElementById('giftResult').innerText = '无法抽取题目或序号';
+                        return;
+                    }
+                }
+                
+                // 重新过滤剩余序号池，确保不包含已使用的序号
+                remainingNumbers = remainingNumbers.filter(num => !usedNumbers.has(num));
+                console.log('过滤后的剩余序号池:', remainingNumbers);
+                
+                if (remainingNumbers.length === 0) {
+                    // 如果过滤后没有剩余序号，重置序号池
+                    console.log('序号池所有序号都被使用，重新生成序号池');
+                    remainingNumbers = [];
+                    for (var i = 1; i <= 13; i++) {
+                        if (i !== 10 && !usedNumbers.has(i)) {
+                            remainingNumbers.push(i);
+                        }
+                    }
+                    console.log('重新生成的序号池:', remainingNumbers);
+                    
+                    if (remainingNumbers.length === 0) {
+                        document.getElementById('giftResult').innerText = '所有序号已被使用，无法继续抽取!';
+                        return;
+                    }
+                }
+                
+                if (remainingTopics.length === 0) {
+                    document.getElementById('giftResult').innerText = '无法抽取题目或序号';
+                    return;
+                }
+                
+                // 抽取题目和序号
+                var randomTopicIndex = Math.floor(Math.random() * remainingTopics.length);
+                drawnTopic = remainingTopics[randomTopicIndex];
+                
                 var randomNumberIndex = Math.floor(Math.random() * remainingNumbers.length);
                 drawnNumber = remainingNumbers[randomNumberIndex];
+                
+                console.log('随机选择题目:', drawnTopic.name, '序号:', drawnNumber);
             }
             
-            if (!drawnTopic || !drawnNumber) {
-                document.getElementById('giftResult').innerText = '题目或序号已抽完';
-                document.getElementById('drawButton').disabled = true;
+            // 获取当前用户名
+            var drawerName = currentUserName || (isAdmin ? '管理员' : '匿名用户' + Math.floor(Math.random() * 1000));
+            
+            // 显示加载状态
+            document.getElementById('giftResult').innerText = '正在抽取，请稍候...';
+            
+            // 先保存抽取结果到本地，确保即使API调用失败也能记录成功的抽取
+            try {
+                // 标记题目为已抽取
+                drawnTopics[drawnTopic.id] = true;
+                
+                // 记录抽取者信息（支持多用户，以逗号分隔）
+                if (topicDrawers[drawnTopic.id]) {
+                    var existingDrawers = topicDrawers[drawnTopic.id].split(', ');
+                    // 如果当前用户未抽取过该题目，则添加到列表中
+                    if (!existingDrawers.includes(drawerName)) {
+                        existingDrawers.push(drawerName);
+                        topicDrawers[drawnTopic.id] = existingDrawers.join(', ');
+                    }
+                } else {
+                    // 首次被抽取
+                    topicDrawers[drawnTopic.id] = drawerName;
+                }
+                
+                // 记录序号信息
+                if (!topicNumbers[drawnTopic.id]) {
+                    topicNumbers[drawnTopic.id] = {};
+                }
+                topicNumbers[drawnTopic.id][drawerName] = drawnNumber;
+                
+                // 保存到本地存储（作为备份）
+                localStorage.setItem(storageKeyPrefix + 'drawnTopics', JSON.stringify(drawnTopics));
+                localStorage.setItem(storageKeyPrefix + 'topicDrawers', JSON.stringify(topicDrawers));
+                localStorage.setItem(storageKeyPrefix + 'topicNumbers', JSON.stringify(topicNumbers));
+                localStorage.setItem(storageKeyPrefix + 'usedNumbers', JSON.stringify(Array.from(usedNumbers)));
+                
+                // 标记当前用户已抽取
+                if (!isAdmin) {
+                    localStorage.setItem(storageKeyPrefix + 'user_' + (currentUserName || 'anonymous'), 'true');
+                    hasDrawn = true;
+                    // 确保状态立即更新，避免重复检查
+                    console.log('用户', currentUserName, '抽取成功，已标记为已抽取');
+                }
+                
+                // 更新抽取结果表，即使API调用失败也要显示结果
+                updateResultsTable();
+                
+                // 禁用抽取按钮（非管理员）
+                if (!isAdmin) {
+                    document.getElementById('drawButton').disabled = true;
+                    console.log('已禁用用户', currentUserName, '的抽取按钮');
+                }
+                
+            } catch (e) {
+                console.error('保存抽取结果失败:', e);
+            }
+            
+            // 然后调用服务端验证序号唯一性
+            validateAndMarkNumber(drawnNumber, drawnTopic.id, drawerName)
+                .then(isValid => {
+                    if (isValid) {
+                        // 显示抽取成功结果，重点突出答题序号
+                        document.getElementById('giftResult').innerText = '您的题目是：' + drawnTopic.name + '，答题序号是：' + drawnNumber;
+                        console.log('抽取成功并通过服务器验证:', {topic: drawnTopic.name, number: drawnNumber, user: drawerName});
+                    } else {
+                        // 序号验证失败但已本地保存，仍显示成功结果但记录警告
+                        // 这样用户体验更好，不会看到'抽取失败'但结果实际已存在的矛盾情况
+                        document.getElementById('giftResult').innerText = '您的题目是：' + drawnTopic.name + '，答题序号是：' + drawnNumber;
+                        console.warn('本地抽取成功但序号验证失败，可能需要管理员协调:', drawnNumber);
+                    }
+                    
+                    // 更新题目池
+                    initGiftPool();
+                })
+                .catch(error => {
+                    console.error('API调用出错但本地抽取已成功:', error);
+                    // 即使API调用失败，仍显示抽取成功结果，因为本地已经保存
+                    document.getElementById('giftResult').innerText = '您的题目是：' + drawnTopic.name + '，答题序号是：' + drawnNumber;
+                    
+                    // 更新题目池
+                    initGiftPool();
+                });
+        }
+        
+        // 重置所有抽取结果（仅限管理员）
+        function resetCurrentDraw() {
+            // 检查是否是管理员
+            if (!isAdmin) {
+                alert('只有管理员有权限重置所有抽取结果！');
                 return;
             }
             
-            // 标记题目为已抽取
-            drawnTopics[drawnTopic.id] = true;
-            localStorage.setItem(storageKeyPrefix + 'drawnTopics', JSON.stringify(drawnTopics));
-            
-            // 标记序号为已抽取
-            drawnNumbers[drawnNumber] = true;
-            localStorage.setItem(storageKeyPrefix + 'drawnNumbers', JSON.stringify(drawnNumbers));
-            
-            // 记录抽取者信息
-            var drawerName = currentUserName || (isAdmin ? '管理员' : '匿名用户' + Math.floor(Math.random() * 1000));
-            topicDrawers[drawnTopic.id] = drawerName;
-            localStorage.setItem(storageKeyPrefix + 'topicDrawers', JSON.stringify(topicDrawers));
-            
-            // 记录序号信息
-            topicNumbers[drawnTopic.id] = drawnNumber;
-            localStorage.setItem(storageKeyPrefix + 'topicNumbers', JSON.stringify(topicNumbers));
-            
-            // 如果是普通用户，标记该用户已经抽取过题目
-            if (!isAdmin) {
-                localStorage.setItem(storageKeyPrefix + 'user_' + (currentUserName || 'anonymous'), 'true');
-                hasDrawn = true;
+            if (!confirm('确定要重置所有抽取结果吗？此操作将清空所有人的抽签结果！')) {
+                return;
             }
             
-            // 显示抽取结果
-            document.getElementById('giftResult').innerText = '您的题目是：' + drawnTopic.name + '，序号是：' + drawnNumber;
+            document.getElementById('giftResult').innerText = '正在重置所有抽取结果，请稍候...';
             
-            // 更新题目池
-            initGiftPool();
+            // 使用resetAllData函数的逻辑，但修改提示信息
+            fetch(API_BASE_URL + '/reset', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ isAdmin: true })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // 清空本地数据
+                    try {
+                        localStorage.removeItem(storageKeyPrefix + 'usedNumbers');
+                        localStorage.removeItem(storageKeyPrefix + 'drawnTopics');
+                        localStorage.removeItem(storageKeyPrefix + 'topicDrawers');
+                        localStorage.removeItem(storageKeyPrefix + 'topicNumbers');
+                        localStorage.removeItem(storageKeyPrefix + 'usedUserNames');
+                        
+                        // 清空全局变量
+                        usedNumbers.clear();
+                        remainingNumbers = [];
+                        drawnTopics = {};
+                        topicDrawers = {};
+                        topicNumbers = {};
+                        hasDrawn = false;
+                        usedUserNames = [];
+                        
+                        // 重新初始化
+                        initGiftPool();
+                        document.getElementById('giftResult').innerText = '所有抽取结果已重置！';
+                        
+                        // 启用抽取按钮
+                        document.getElementById('drawButton').disabled = false;
+                    } catch (e) {
+                        console.error('清空本地数据失败:', e);
+                    }
+                } else {
+                    document.getElementById('giftResult').innerText = '重置失败: ' + (data.message || '未知错误');
+                }
+            })
+            .catch(error => {
+                console.error('重置数据请求失败:', error);
+                document.getElementById('giftResult').innerText = '重置请求失败，请重试！';
+            });
         }
         
         // 重置题目池
@@ -415,17 +982,81 @@
                 hasDrawn = false;
                 
                 // 更新UI
-                initGiftPool();
-                document.getElementById('drawButton').disabled = false;
-                document.getElementById('giftResult').innerText = '点击下方按钮抽取题目';
-                
-                // 添加提示信息，显示当前用户身份
-                console.log('管理员模式：重置成功，只能抽取题目5，序号10');
+            initGiftPool();
+            updateResultsTable();
+            document.getElementById('drawButton').disabled = false;
+            document.getElementById('giftResult').innerText = '点击下方按钮抽取题目';
+            
+            // 添加提示信息，显示当前用户身份
+            console.log('管理员模式：重置成功，只能抽取题目5，序号10');
             }
+        }
+        
+        // 初始化WebSocket连接
+        function initWebSocket() {
+            // 连接到服务器
+            socket = io('http://localhost:3000');
+            
+            // 连接成功
+            socket.on('connect', function() {
+                console.log('WebSocket连接成功');
+            });
+            
+            // 接收初始数据
+            socket.on('initial-data', function(data) {
+                console.log('收到初始数据', data);
+                if (data.topicNumbers) {
+                    topicNumbers = data.topicNumbers;
+                }
+                if (data.topicDrawers) {
+                    topicDrawers = data.topicDrawers;
+                }
+                if (data.usedNumbers) {
+                    usedNumbers.clear();
+                    data.usedNumbers.forEach(num => usedNumbers.add(parseInt(num)));
+                }
+                updateGiftPoolDisplay();
+                updateResultsTable();
+            });
+            
+            // 接收数据更新
+            socket.on('data-update', function(data) {
+                console.log('收到数据更新', data);
+                if (data.topicNumbers) {
+                    topicNumbers = data.topicNumbers;
+                }
+                if (data.topicDrawers) {
+                    topicDrawers = data.topicDrawers;
+                }
+                if (data.usedNumbers) {
+                    usedNumbers.clear();
+                    data.usedNumbers.forEach(num => usedNumbers.add(parseInt(num)));
+                }
+                updateGiftPoolDisplay();
+                updateResultsTable();
+            });
+            
+            // 连接断开
+            socket.on('disconnect', function() {
+                console.log('WebSocket连接断开');
+                // 可以在这里添加重连逻辑
+                setTimeout(initWebSocket, 5000);
+            });
+            
+            // 连接错误
+            socket.on('connect_error', function(error) {
+                console.error('WebSocket连接错误:', error);
+                // 可以在这里添加错误处理逻辑
+                setTimeout(initWebSocket, 5000);
+            });
         }
         
         // 初始化
         initGiftPool();
+        initAdminSelectArea();
+        updateResultsTable();
+        initWebSocket();
+        console.log('WebSocket已初始化，所有数据更新将通过WebSocket实时接收')
         
         // 用户名相关变量和元素
         var userNameInput = document.getElementById('userName');
@@ -488,6 +1119,7 @@
         
         // 绑定事件
         document.getElementById('drawButton').addEventListener('click', drawGift);
+        document.getElementById('resetButton').addEventListener('click', resetCurrentDraw);
         
         // 添加双击重置功能（隐藏功能）
         document.getElementById('giftIcon').addEventListener('dblclick', resetGiftPool);
